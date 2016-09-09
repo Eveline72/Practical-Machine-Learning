@@ -1,0 +1,92 @@
+---
+title: "Practical Machine Learning - Peer assignment"
+author: "Eveline van Acquoij"
+date: "September 8, 2016"
+output: html_document
+---
+
+### Executive Summary
+
+This report uses machine learning algorithms to predict the manner in which users of exercise devices exercise. 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The data were already divided into a training and testing set. The goal of this assignment is to find a good machine learning algorithm that can predict the manner in which the exercise was done. I first cleaned the dataset thoroughly, because there were a lot of variables in it with almost zero variance. Then I found out that none of the remaining variables had a large correlation with the output variable, therefore I chose to use a random tree model. This model delivered a very high accuracy and low prediction error. Also, the outcome I got from the testing data set gave me a 20/20 score on the test. 
+
+### Prepare the Environment
+
+Here we load the relevant libraries for the program to run.
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, results = "hold")
+library(ElemStatLearn)
+library(caret)
+library(rpart)
+library(randomForest)
+set.seed(1234)
+```
+
+### Loading and preprocessing the data
+
+First, I load the data. If the data is already available on the hard drive, the downloading is skipped. Then the data are cleaned:
+- there are variables with almost zero variance, they will not help in predicting, so I deleted them
+- I also deleted variables with missing values. Last, but not least, I divided the training data into a "real" training data set and a validating set. In this way, I can validate our model, leaving the testing data aside to do a real prediction, which I need to answer the test.
+```{r dataprocessing}
+URLtr  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv" 
+URLtst <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv" 
+filetr <-"pml-training.csv"
+filetst <-"pml-testing.csv"
+if (!file.exists(filetr)) {
+            message(paste("Please Wait! Download...", filetr, "..."));
+            download.file(URLtr, destfile=filetr);
+        }
+pml_tr <- read.csv(filetr, header=TRUE, sep=",", na.strings=c("NA",""))
+pml_tr <- pml_tr[,-1]  #remove ID column
+
+if (!file.exists(filetst)) {
+            message(paste("Please Wait! Download...", filetst, "..."));
+            download.file(URLtst, destfile=filetst);
+        }
+pml_tst <- read.csv(filetst, header=TRUE, sep=",", na.strings=c("NA",""))
+pml_tst <- pml_tst[,-1]  #remove ID column
+
+# Remove near zero covariates
+nzv <- nearZeroVar(pml_tr,saveMetrics=TRUE)
+pml_tr <- pml_tr[,!nzv$nzv]
+pml_tst <- pml_tst[,!nzv$nzv]
+
+# Remove variables with missing values
+pml_tr_na <- pml_tr[,(colSums(is.na(pml_tr)) == 0)]
+pml_tst_na <- pml_tst[,(colSums(is.na(pml_tst)) == 0)]
+
+# Remove unnecessary columns
+colrm_tr <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window")
+colrm_tst <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window","problem_id")
+pml_tr_colrm <- pml_tr_na[,!(names(pml_tr_na) %in% colrm_tr)]
+pml_tst_colrm <- pml_tst_na[,!(names(pml_tst_na) %in% colrm_tst)]
+dim(pml_tr_colrm)
+dim(pml_tst_colrm)
+
+# Create a train and a validation set from the training set and rename the testing set to testing, so we have logical names
+
+inTrain <- createDataPartition(pml_tr_colrm$classe,p=0.7,list=FALSE)
+training <- pml_tr_colrm[inTrain,]
+validating <- pml_tr_colrm[-inTrain,]
+testing <- pml_tst_colrm
+```
+
+### Modeling
+
+First, I calculate the correlations between all variables and the dependent variable in the training set. I didn't see any of the predictor variables being strongly correlated with the dependent variable, so lineair regression is not the best option here. (I did not print the correlation matrix here, because it is pretty big, and it would reduce readability of this document.) Therefore I estimated a random forest model. You can see from the confusion matrix, that the accuracy is very high (99,47%), and therefore the model works well. Also, we predict 20 classe variables from the testing data set and enter them into the test on the coursera website. They are correct!
+
+```{r modeling}
+
+## Calculate correlations between all variables and the dependent variable.
+cor <- abs(sapply(colnames(training[, -ncol(training)]), function(x) cor(as.numeric(training[, x]), as.numeric(training$classe), method = "spearman")))
+
+# Estimate the random forest model and compute the confusion matrix
+mod1 <- train(classe ~ . , method = "rf", data = training)
+pred_val <- predict(mod1,newdata=validating)
+confusionMatrix(pred_val,validating$classe)
+pred_tst <- predict(mod1,newdata=testing)
+pred_tst
+```
